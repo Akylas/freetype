@@ -64,6 +64,13 @@ FT_BEGIN_HEADER
 #define USE_SQUARED_DISTANCES  0
 #endif
 
+  /* Use fastpath mode when generating glyphs                            */
+  /* This needs floating point arithmetic, but generates the image       */
+  /* typically an order of magnitude faster.                             */
+#ifndef USE_FLOAT_FASTPATH
+#define USE_FLOAT_FASTPATH  1
+#endif
+
 
   /**************************************************************************
    *

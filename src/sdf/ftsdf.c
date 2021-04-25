@@ -26,6 +26,11 @@
 
 #include "ftsdferrs.h"
 
+#if USE_FLOAT_FASTPATH
+#include <math.h>
+#include <float.h>
+#endif
+
 
   /**************************************************************************
    *
@@ -3139,6 +3144,168 @@
 
 #endif /* 0 */
 
+#if USE_FLOAT_FASTPATH
+  /**************************************************************************
+   *
+   * @Function:
+   *   sdf_generate_edge_line_float_fastpath
+   *
+   * @Description:
+   *   This function generates distance field for a specific edge line using
+   *   various low-level optimizations using floating-point arithmetic. It
+   *   is at least an order of magnitude faster of modern CPUs with floating point units.
+   *
+   * @Input:
+   *   internal_params ::
+   *     Internal parameters and properties required by the rasterizer.
+   *     See @SDF_Params for more.
+   *
+   *   cbox ::
+   *     A bounding box for the edge plus the spread.
+   * 
+   *   edge ::
+   *     The edge to use when calculating SDF.
+   * 
+   *   dists ::
+   *     Existing SDF buffer to add the edge SDF to.
+   * 
+   *   width ::
+   *     Width of the SDF buffer.
+   *
+   *   rows ::
+   *     Height of the SDF buffer.
+   * 
+   *   spread ::
+   *     The spread value to use (in pixels).
+   *
+   *   spread ::
+   *     Maximum distances to be allowed in the output bitmap.
+   *
+   * @Output:
+   *   dists ::
+   *     The SDF buffer with the newly added edge.
+   */
+  static FT_Error
+  sdf_generate_edge_line_float_fastpath( const SDF_Params*    internal_params,
+                                         const FT_CBox*       cbox,
+                                         const SDF_Edge*      edge,
+                                         SDF_Signed_Distance* dists,
+                                         FT_Int               width,
+                                         FT_Int               rows,
+                                         FT_UInt              spread )
+  {
+    float   a_x, a_y;
+    float   b_x, b_y;
+    float   ab_x, ab_y;
+    float   ab_len_sqr, ab_len, ab_len_sqr_inv;
+    FT_Int  x, y;
+    FT_Int  x_min, x_max, y_min, y_max;
+    FT_Int  sign;
+
+
+    FT_ASSERT( edge && edge->edge_type == SDF_EDGE_LINE );
+
+    sign = ( internal_params->orientation == FT_ORIENTATION_FILL_LEFT ? -1 : 1 );
+
+    /* precalculate shifted endpoints and various line attributes */
+    a_x  = (float)( edge->start_pos.x - FT_INT_26D6( 1 ) / 2 ) * (float)FT_26D6_16D16( 1 );
+    a_y  = (float)( edge->start_pos.y - FT_INT_26D6( 1 ) / 2 ) * (float)FT_26D6_16D16( 1 );
+    b_x  = (float)( edge->end_pos.x   - FT_INT_26D6( 1 ) / 2 ) * (float)FT_26D6_16D16( 1 );
+    b_y  = (float)( edge->end_pos.y   - FT_INT_26D6( 1 ) / 2 ) * (float)FT_26D6_16D16( 1 );
+    ab_x = b_x - a_x;
+    ab_y = b_y - a_y;
+    ab_len_sqr     = ab_x * ab_x + ab_y * ab_y;
+    ab_len         = sqrtf( ab_len_sqr );
+    ab_len_sqr_inv = 1.0f / ( ab_len_sqr + FLT_EPSILON );
+
+    /* now loop over the pixels in the control box. */
+    y_min = FT_MAX( 0, cbox->yMin );
+    y_max = FT_MIN( cbox->yMax, rows );
+    for ( y = y_min; y < y_max; y++ )
+    {
+      FT_Int   dx, dy;
+      FT_UInt  index;
+
+
+      /* calculate horizontal span */
+      dy = FT_MIN( y - cbox->yMin, cbox->yMax - y );
+      if ( dy < (FT_Int)spread )
+        dx = (FT_Int)sqrtf( (float)( spread * spread - dy * dy ) );
+      else
+        dx = 0;
+
+      x_min = FT_MAX( 0, cbox->xMin + dx );
+      x_max = FT_MIN( cbox->xMax - dx, width );
+
+      /* precalculate distance buffer index */
+      if ( internal_params->flip_y )
+        index = y * width + x_min;
+      else
+        index = ( rows - y - 1 ) * width + x_min;
+
+      /* loop over horizontal span */
+      for ( x = x_min; x < x_max; x++, index++ )
+      {
+        float    p_x, p_y;
+        float    q_x, q_y;
+        float    pq_x, pq_y;
+        float    pq_len_sqr, pq_len;
+        float    cross;
+        float    factor;
+        float    prev_distance;
+        SDF_Signed_Distance  dist;
+
+
+        p_x = (float)FT_INT_16D16( x );
+        p_y = (float)FT_INT_16D16( y );
+
+        /* calculate dot product, clamp it to 0..1 range */
+        factor = ( ( p_x - a_x ) * ab_x + ( p_y - a_y ) * ab_y ) * ab_len_sqr_inv;
+        factor = ( factor < 0.0f ? 0.0f : ( factor > 1.0f ? 1.0f : factor ) );
+
+        /* calculate nearest point on line */
+        q_x = a_x + ab_x * factor;
+        q_y = a_y + ab_y * factor;
+
+        /* calculate distance from point to the nearest point on line, do fast rejection test */
+        pq_x = q_x - p_x;
+        pq_y = q_y - p_y;
+        pq_len_sqr = pq_x * pq_x + pq_y * pq_y;
+
+        prev_distance = (float)( dists[index].sign == 0 ? FT_INT_16D16(spread) : dists[index].distance + CORNER_CHECK_EPSILON );
+        if ( pq_len_sqr > prev_distance * prev_distance )
+          continue;
+
+        pq_len = sqrtf( pq_len_sqr );
+        cross = pq_y * ab_x - pq_x * ab_y;
+
+        /* calculate signed distance */
+        dist.sign     = (FT_Char)( cross > 0 ? sign : -sign );
+        dist.distance = (FT_16D16)( pq_len );
+        dist.cross    = FT_INT_16D16( 1 );
+
+        /* optimization: calculate cross product only if nearest point is line endpoint */
+        if ( factor == 0.0f || factor == 1.0f )
+          dist.cross = (FT_16D16)( cross / ( ab_len * pq_len + FLT_EPSILON ) * (float)FT_INT_16D16( 1 ) );
+
+        /* check whether the pixel is set or not */
+        if ( dists[index].sign == 0 )
+          dists[index] = dist;
+        else
+        {
+          FT_16D16 diff = dists[index].distance - dist.distance;
+          if ( diff > CORNER_CHECK_EPSILON )
+            dists[index] = dist;
+          else if ( diff > -CORNER_CHECK_EPSILON )
+            dists[index] = resolve_corner( dists[index], dist );
+        }
+      }
+    }
+
+    return FT_Err_Ok;
+  }
+#endif /* USE_FLOAT_FASTPATH */
+
 
   /**************************************************************************
    *
@@ -3267,6 +3434,22 @@
         cbox.yMin = ( cbox.yMin - 63 ) / 64 - ( FT_Pos )spread;
         cbox.yMax = ( cbox.yMax + 63 ) / 64 + ( FT_Pos )spread;
 
+        /* use fastpath mode, when possible */
+#if USE_FLOAT_FASTPATH
+        if ( edges->edge_type == SDF_EDGE_LINE )
+        {
+          FT_CALL( sdf_generate_edge_line_float_fastpath( &internal_params,
+                                                          &cbox,
+                                                          edges,
+                                                          dists,
+                                                          width,
+                                                          rows,
+                                                          spread ) );
+          edges = edges->next;
+          continue;
+        }
+#endif
+
         /* now loop over the pixels in the control box. */
         for ( y = cbox.yMin; y < cbox.yMax; y++ )
         {
@@ -3314,11 +3497,14 @@
             /* check whether the pixel is set or not */
             if ( dists[index].sign == 0 )
               dists[index] = dist;
-            else if ( dists[index].distance > dist.distance )
-              dists[index] = dist;
-            else if ( FT_ABS( dists[index].distance - dist.distance )
-                        < CORNER_CHECK_EPSILON )
-              dists[index] = resolve_corner( dists[index], dist );
+            else
+            {
+              FT_16D16 diff = dists[index].distance - dist.distance;
+              if ( diff > CORNER_CHECK_EPSILON )
+                dists[index] = dist;
+              else if ( diff > -CORNER_CHECK_EPSILON )
+                dists[index] = resolve_corner( dists[index], dist );
+            }
           }
         }
 
