@@ -251,7 +251,7 @@
         if ( error )
           return error;
 
-        if ( FT_NEW_ARRAY( ref, *count ) )
+        if ( FT_QNEW_ARRAY( ref, *count ) )
           return error;
 
         for ( j = 0; j < *count; j++ )
@@ -299,7 +299,7 @@
                         j, ref[j].res_id, ref[j].offset ));
         }
 
-        if ( FT_NEW_ARRAY( offsets_internal, *count ) )
+        if ( FT_QNEW_ARRAY( offsets_internal, *count ) )
           goto Exit;
 
         /* XXX: duplicated reference ID,

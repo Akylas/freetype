@@ -306,7 +306,7 @@
     exec->memory   = memory;
     exec->callSize = 32;
 
-    if ( FT_NEW_ARRAY( exec->callStack, exec->callSize ) )
+    if ( FT_QNEW_ARRAY( exec->callStack, exec->callSize ) )
       goto Fail_Memory;
 
     /* all values in the context are set to 0 already, but this is */
@@ -3593,7 +3593,7 @@
       return;
     }
 
-    exc->IP += args[0];
+    exc->IP = ADD_LONG( exc->IP, args[0] );
     if ( exc->IP < 0                                             ||
          ( exc->callTop > 0                                    &&
            exc->IP > exc->callStack[exc->callTop - 1].Def->end ) )
@@ -7922,6 +7922,7 @@
       exc->opcode = exc->code[exc->IP];
 
 #ifdef FT_DEBUG_LEVEL_TRACE
+      if ( ft_trace_levels[trace_ttinterp] >= 6 )
       {
         FT_Long  cnt = FT_MIN( 8, exc->top );
         FT_Long  n;
