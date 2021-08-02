@@ -61,7 +61,7 @@ FT_BEGIN_HEADER
   /* chance of overflow and artifacts.  You can safely use it up to a    */
   /* pixel size of 128.                                                  */
 #ifndef USE_SQUARED_DISTANCES
-#define USE_SQUARED_DISTANCES  0
+#define USE_SQUARED_DISTANCES  1
 #endif
 
   /* Use fastpath mode when generating glyphs                            */
