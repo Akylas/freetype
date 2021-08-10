@@ -3191,11 +3191,6 @@
    *   dists ::
    *     The SDF buffer with the newly added edge.
    */
-  #ifdef _MSC_VER
-  #pragma float_control(precise, off)
-  #else  
-  #pragma STDC FENV_ACCESS off
-  #endif
   static FT_Error
   sdf_generate_edge_line_float_fastpath( const SDF_Params*    internal_params,
                                          const FT_CBox*       cbox,
