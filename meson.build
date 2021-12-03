@@ -87,7 +87,7 @@ foreach mod: ft_main_modules
   ft2_sources += 'src/@0@/@1@.c'.format(mod, source)
 endforeach
 
-# NOTE: The `gzip` and `bzip2` aux modules are handled through options.
+# NOTE: The `bzip2` aux module is handled through options.
 ft_aux_modules = run_command(python_exe,
   files('builds/meson/parse_modules_cfg.py'),
   '--format=aux-modules',
@@ -101,7 +101,9 @@ foreach auxmod: ft_aux_modules
     source = 'ftcache'
   elif auxmod == 'lzw'
     source = 'ftlzw'
-  elif auxmod == 'gzip' or auxmod == 'bzip2'
+  elif auxmod == 'gzip'
+    source = 'ftgzip'
+  elif auxmod == 'bzip2'
     # Handled through options instead, see below.
     continue
   endif
@@ -232,7 +234,23 @@ else
   ft2_sources += 'src/base/ftdebug.c'
 endif
 
+
 ft2_deps = []
+common_ldflags = []
+
+
+# Correct compatibility version for OS x.
+#
+# OSX sets the compatibility_version (aka libtools version) differently from
+# the library name.
+#
+if host_machine.system() == 'darwin'
+  # maintain compatibility with autotools on macOS
+  common_ldflags = [
+    '-compatibility_version', ft2_pkgconfig_version.split('.')[0],
+    '-current_version', ft2_pkgconfig_version
+  ]
+endif
 
 
 # Generate `ftoption.h` based on available dependencies.
@@ -243,20 +261,16 @@ process_header_command = [python_exe,
 ftoption_command = process_header_command
 
 
-# GZip support
+# external GZip support
 zlib_dep = dependency('zlib',
   required: get_option('zlib'),
   fallback: 'zlib')
 
 if zlib_dep.found()
-  ftoption_command += [
-    '--enable=FT_CONFIG_OPTION_USE_ZLIB',
-    '--enable=FT_CONFIG_OPTION_SYSTEM_ZLIB',
-  ]
-  ft2_sources += files(['src/gzip/ftgzip.c',])
+  ftoption_command += ['--enable=FT_CONFIG_OPTION_SYSTEM_ZLIB']
   ft2_deps += [zlib_dep]
 else
-  ftoption_command += ['--disable=FT_CONFIG_OPTION_USE_ZLIB']
+  ftoption_command += ['--disable=FT_CONFIG_OPTION_SYSTEM_ZLIB']
 endif
 
 # BZip2 support
@@ -346,6 +360,7 @@ ft2_lib = library('freetype',
   dependencies: ft2_deps,
   install: true,
   version: ft2_so_version,
+  link_args: common_ldflags,
 )
 
 
@@ -393,18 +408,20 @@ gen_docs = custom_target('freetype2 reference documentation',
   command: [python_exe,
     files('builds/meson/generate_reference_docs.py'),
     '--version=' + meson.project_version(),
-    '--input-dir=' + meson.source_root(),
+    '--input-dir=' + meson.current_source_dir(),
     '--output-dir=@OUTPUT@'
   ],
 )
 
 
 summary({'OS': host_machine.system(),
-         'Zlib': zlib_dep.found() ? 'yes' : 'no',
+        }, section: 'Operating System')
+
+summary({'Zlib': zlib_dep.found() ? 'external' : 'internal',
          'Bzip2': bzip2_dep.found() ? 'yes' : 'no',
          'Png': libpng_dep.found() ? 'yes' : 'no',
          'Harfbuzz': harfbuzz_dep.found() ? 'yes' : 'no',
          'Brotli': brotli_dep.found() ? 'yes' : 'no',
-        }, section: 'Configuration Options Summary:')
+        }, section: 'Used Libraries')
 
 # EOF
