@@ -2376,11 +2376,11 @@
      *     ```
      *
      * (6) Our task is to find a value of `t` such that the above equation
-     *     `Q(t)` becomes zero, this is, the point-to-curve vector makes
+     *     `Q(t)` becomes zero, that is, the point-to-curve vector makes
      *     90~degrees with the curve.  We solve this with the Newton-Raphson
      *     method.
      *
-     * (7) We first assume an arbitary value of factor `t`, which we then
+     * (7) We first assume an arbitrary value of factor `t`, which we then
      *     improve.
      *
      *     ```
@@ -2689,11 +2689,11 @@
      *     ```
      *
      * (6) Our task is to find a value of `t` such that the above equation
-     *     `Q(t)` becomes zero, this is, the point-to-curve vector makes
+     *     `Q(t)` becomes zero, that is, the point-to-curve vector makes
      *     90~degree with curve.  We solve this with the Newton-Raphson
      *     method.
      *
-     * (7) We first assume an arbitary value of factor `t`, which we then
+     * (7) We first assume an arbitrary value of factor `t`, which we then
      *     improve.
      *
      *     ```
@@ -2723,8 +2723,9 @@
 
     FT_Error  error = FT_Err_Ok;
 
-    FT_26D6_Vec   aA, bB, cC, dD; /* A, B, C in the above comment          */
-    FT_16D16_Vec  nearest_point;  /* point on curve nearest to `point`     */
+    FT_26D6_Vec   aA, bB, cC, dD; /* A, B, C, D in the above comment       */
+    FT_16D16_Vec  nearest_point = { 0, 0 };
+                                  /* point on curve nearest to `point`     */
     FT_16D16_Vec  direction;      /* direction of curve at `nearest_point` */
 
     FT_26D6_Vec  p0, p1, p2, p3;  /* control points of a cubic curve       */
@@ -3943,9 +3944,13 @@
    */
 
   static FT_Error
-  sdf_raster_new( FT_Memory     memory,
-                  SDF_PRaster*  araster )
+  sdf_raster_new( void*       memory_,   /* FT_Memory    */
+                  FT_Raster*  araster_ ) /* SDF_PRaster* */
   {
+    FT_Memory     memory  = (FT_Memory)memory_;
+    SDF_PRaster*  araster = (SDF_PRaster*)araster_;
+
+
     FT_Error     error;
     SDF_PRaster  raster = NULL;
 
